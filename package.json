@@ -1,5 +1,5 @@
 {
-  "name": "guardian-intel-mcp-server",
+  "name": "@abusix/guardian-intel-mcp-server",
   "version": "1.0.0",
   "description": "MCP server for Abusix Guardian Intel threat intelligence API",
   "type": "module",
