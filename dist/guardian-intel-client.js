@@ -3,11 +3,14 @@ export class GuardianIntelClient {
     client;
     baseUrl;
     constructor(config) {
+        if (!config.apiKey || config.apiKey.trim().length === 0) {
+            throw new Error('Guardian Intel API key is required and cannot be empty');
+        }
         this.baseUrl = config.baseUrl || 'https://threat-intel-api.abusix.com/beta';
         this.client = axios.create({
             baseURL: this.baseUrl,
             headers: {
-                'Authorization': `Bearer ${config.apiKey}`,
+                'x-api-key': `${config.apiKey}`,
                 'Content-Type': 'application/json',
                 'User-Agent': '@abusix/guardian-intel-mcp-server/1.0.0'
             },
@@ -18,9 +21,38 @@ export class GuardianIntelClient {
         });
     }
     handleApiError(error) {
+        const status = error.response?.status;
+        const statusText = error.response?.statusText;
         if (error.response?.data) {
             const apiError = error.response.data;
-            return new Error(`Guardian Intel API Error (${apiError.statusCode}): ${apiError.message}`);
+            // Try to extract error message from various possible response formats
+            const errorMessage = apiError.message ||
+                apiError.error ||
+                apiError.detail ||
+                apiError.description ||
+                statusText ||
+                'Unknown API error';
+            const errorCode = apiError.statusCode || apiError.code || status || 'Unknown';
+            return new Error(`Guardian Intel API Error (${errorCode}): ${errorMessage}`);
+        }
+        // Handle specific HTTP status codes
+        if (status) {
+            switch (status) {
+                case 401:
+                    return new Error(`Guardian Intel API Error (401): Invalid or missing API key`);
+                case 403:
+                    return new Error(`Guardian Intel API Error (403): Access forbidden - check API key permissions`);
+                case 404:
+                    return new Error(`Guardian Intel API Error (404): Resource not found`);
+                case 429:
+                    return new Error(`Guardian Intel API Error (429): Rate limit exceeded`);
+                case 500:
+                    return new Error(`Guardian Intel API Error (500): Internal server error`);
+                case 503:
+                    return new Error(`Guardian Intel API Error (503): Service temporarily unavailable`);
+                default:
+                    return new Error(`Guardian Intel API Error (${status}): ${statusText || 'HTTP error'}`);
+            }
         }
         if (error.code === 'ECONNABORTED') {
             return new Error('Guardian Intel API request timeout');
