@@ -101,7 +101,7 @@ jobs:
       if: github.event.inputs.dry_run != 'true'
       run: |
         echo "📦 Publishing to NPM..."
-        npm publish --access public
+        npm publish
         echo "✅ Successfully published ${{ steps.package.outputs.name }}@${{ steps.package.outputs.version }}"
       env:
         NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
