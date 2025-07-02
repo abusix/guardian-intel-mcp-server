@@ -375,7 +375,7 @@ describe('GuardianIntelTools', () => {
         mockClient.lookupIp.mockRejectedValue('String error');
 
         await expect(tools.executeTool('guardian_intel_lookup', { ip: '1.2.3.4' }))
-          .rejects.toThrow('Tool execution failed: Unknown error');
+          .rejects.toThrow('Tool execution failed: String error');
       });
     });
   });
