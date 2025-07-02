@@ -73,7 +73,21 @@ export class GuardianIntelClient {
         }
         try {
             const response = await this.client.get(`/query/${encodeURIComponent(ip)}`);
-            return response.data;
+            // Extract the result from the API wrapper
+            if (response.data?.result) {
+                return {
+                    ip: response.data.result.item,
+                    tags: response.data.result.tags,
+                    confidence: response.data.result.intent === 'malicious' ? 'high' : response.data.result.intent === 'suspicious' ? 'medium' : 'low',
+                    threat_level: response.data.result.intent,
+                    first_seen: response.data.result.firstSeen,
+                    last_seen: response.data.result.lastSeen,
+                    asn: response.data.result.asn,
+                    abuse_contact: response.data.result.abuseContact,
+                    observed_activity: response.data.result.observedActivity
+                };
+            }
+            throw new Error('Invalid response format from Guardian Intel API');
         }
         catch (error) {
             throw error;
@@ -83,7 +97,14 @@ export class GuardianIntelClient {
         try {
             const params = includeDescriptions ? { includeDescriptions: 'true' } : {};
             const response = await this.client.get('/tags', { params });
-            return response.data;
+            // Extract the result from the API wrapper
+            if (response.data?.result && Array.isArray(response.data.result)) {
+                return {
+                    tags: response.data.result.map((tag) => tag.name),
+                    tag_details: includeDescriptions ? response.data.result : undefined
+                };
+            }
+            throw new Error('Invalid response format from Guardian Intel API');
         }
         catch (error) {
             throw error;
@@ -95,7 +116,17 @@ export class GuardianIntelClient {
         }
         try {
             const response = await this.client.get(`/tags/${encodeURIComponent(tagName)}`);
-            return response.data;
+            // Extract the result from the API wrapper
+            if (response.data?.result) {
+                return {
+                    tag: response.data.result.name,
+                    description: response.data.result.description,
+                    category: response.data.result.category,
+                    confidence: response.data.result.intent === 'malicious' ? 'high' : response.data.result.intent === 'suspicious' ? 'medium' : 'low',
+                    intent: response.data.result.intent
+                };
+            }
+            throw new Error('Invalid response format from Guardian Intel API');
         }
         catch (error) {
             throw error;
@@ -121,7 +152,17 @@ export class GuardianIntelClient {
                 params.snapshot = snapshot;
             }
             const response = await this.client.get(`/tags/${encodeURIComponent(tagName)}/ips`, { params });
-            return response.data;
+            // Extract the result from the API wrapper
+            if (response.data?.result) {
+                return {
+                    tag: response.data.result.tag || tagName,
+                    total: response.data.result.total,
+                    offset: response.data.result.offset || offset,
+                    limit: response.data.result.limit || limit,
+                    ips: response.data.result.entries || []
+                };
+            }
+            throw new Error('Invalid response format from Guardian Intel API');
         }
         catch (error) {
             throw error;

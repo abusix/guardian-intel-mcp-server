@@ -41,7 +41,7 @@ describe('GuardianIntelClient', () => {
       expect(mockedAxios.create).toHaveBeenCalledWith({
         baseURL: 'https://test-api.example.com',
         headers: {
-          'Authorization': 'Bearer test-api-key',
+          'x-api-key': 'test-api-key',
           'Content-Type': 'application/json',
           'User-Agent': '@abusix/guardian-intel-mcp-server/1.0.0'
         },
@@ -63,28 +63,30 @@ describe('GuardianIntelClient', () => {
   describe('lookupIp', () => {
     const mockLookupResponse = {
       data: {
-        status: 'success',
-        statusCode: 200,
         result: {
-          ip: '1.2.3.4',
-          classification: 'malicious',
+          item: '1.2.3.4',
+          tags: ['malware', 'botnet'],
+          intent: 'malicious',
           firstSeen: '2023-01-01T00:00:00Z',
           lastSeen: '2023-12-31T23:59:59Z',
-          abuseContact: 'abuse@example.com',
           asn: {
-            number: 12345,
+            asn: '12345',
             name: 'Test ASN',
-            country: 'US'
+            countryCode: 'US'
           },
-          blocklists: ['blocklist1', 'blocklist2'],
-          activities: [
-            {
+          abuseContact: {
+            email: 'abuse@example.com',
+            status: 'verified',
+            lastVerification: '2023-12-01T00:00:00Z'
+          },
+          observedActivity: {
+            malware: {
               type: 'malware',
               description: 'Malware distribution',
               timestamp: '2023-06-15T12:00:00Z',
               severity: 'high'
             }
-          ]
+          }
         }
       }
     };
@@ -95,7 +97,32 @@ describe('GuardianIntelClient', () => {
       const result = await client.lookupIp('1.2.3.4');
 
       expect(mockAxiosInstance.get).toHaveBeenCalledWith('/query/1.2.3.4');
-      expect(result).toEqual(mockLookupResponse.data);
+      expect(result).toEqual({
+        ip: '1.2.3.4',
+        tags: ['malware', 'botnet'],
+        confidence: 'high',
+        threat_level: 'malicious',
+        first_seen: '2023-01-01T00:00:00Z',
+        last_seen: '2023-12-31T23:59:59Z',
+        asn: {
+          asn: '12345',
+          name: 'Test ASN',
+          countryCode: 'US'
+        },
+        abuse_contact: {
+          email: 'abuse@example.com',
+          status: 'verified',
+          lastVerification: '2023-12-01T00:00:00Z'
+        },
+        observed_activity: {
+          malware: {
+            type: 'malware',
+            description: 'Malware distribution',
+            timestamp: '2023-06-15T12:00:00Z',
+            severity: 'high'
+          }
+        }
+      });
     });
 
     it('should successfully lookup valid IPv6 address', async () => {
@@ -105,7 +132,7 @@ describe('GuardianIntelClient', () => {
           ...mockLookupResponse.data,
           result: {
             ...mockLookupResponse.data.result,
-            ip: '2001:0db8:85a3:0000:0000:8a2e:0370:7334'
+            item: '2001:0db8:85a3:0000:0000:8a2e:0370:7334'
           }
         }
       };
@@ -115,7 +142,32 @@ describe('GuardianIntelClient', () => {
       const result = await client.lookupIp('2001:0db8:85a3:0000:0000:8a2e:0370:7334');
 
       expect(mockAxiosInstance.get).toHaveBeenCalledWith('/query/2001%3A0db8%3A85a3%3A0000%3A0000%3A8a2e%3A0370%3A7334');
-      expect(result).toEqual(ipv6Response.data);
+      expect(result).toEqual({
+        ip: '2001:0db8:85a3:0000:0000:8a2e:0370:7334',
+        tags: ['malware', 'botnet'],
+        confidence: 'high',
+        threat_level: 'malicious',
+        first_seen: '2023-01-01T00:00:00Z',
+        last_seen: '2023-12-31T23:59:59Z',
+        asn: {
+          asn: '12345',
+          name: 'Test ASN',
+          countryCode: 'US'
+        },
+        abuse_contact: {
+          email: 'abuse@example.com',
+          status: 'verified',
+          lastVerification: '2023-12-01T00:00:00Z'
+        },
+        observed_activity: {
+          malware: {
+            type: 'malware',
+            description: 'Malware distribution',
+            timestamp: '2023-06-15T12:00:00Z',
+            severity: 'high'
+          }
+        }
+      });
     });
 
     it('should reject invalid IP address format', async () => {
@@ -139,8 +191,6 @@ describe('GuardianIntelClient', () => {
   describe('getTags', () => {
     const mockTagsResponse = {
       data: {
-        status: 'success',
-        statusCode: 200,
         result: [
           {
             name: 'credentials:brute-force',
@@ -163,7 +213,10 @@ describe('GuardianIntelClient', () => {
       const result = await client.getTags(false);
 
       expect(mockAxiosInstance.get).toHaveBeenCalledWith('/tags', { params: {} });
-      expect(result).toEqual(mockTagsResponse.data);
+      expect(result).toEqual({
+        tags: ['credentials:brute-force', 'tool:scanner'],
+        tag_details: undefined
+      });
     });
 
     it('should get tags with descriptions', async () => {
@@ -174,7 +227,22 @@ describe('GuardianIntelClient', () => {
       expect(mockAxiosInstance.get).toHaveBeenCalledWith('/tags', { 
         params: { includeDescriptions: 'true' } 
       });
-      expect(result).toEqual(mockTagsResponse.data);
+      expect(result).toEqual({
+        tags: ['credentials:brute-force', 'tool:scanner'],
+        tag_details: [
+          {
+            name: 'credentials:brute-force',
+            intent: 'malicious',
+            category: 'activity',
+            description: 'Brute force credential attacks'
+          },
+          {
+            name: 'tool:scanner',
+            intent: 'suspicious',
+            category: 'tool'
+          }
+        ]
+      });
     });
 
     it('should handle API errors', async () => {
@@ -188,21 +256,11 @@ describe('GuardianIntelClient', () => {
   describe('getTagDetails', () => {
     const mockTagDetailsResponse = {
       data: {
-        status: 'success',
-        statusCode: 200,
         result: {
           name: 'credentials:brute-force',
-          intent: 'malicious',
-          category: 'activity',
           description: 'Brute force credential attacks',
-          references: ['https://example.com/ref1', 'https://example.com/ref2'],
-          timeline: [
-            {
-              action: 'created',
-              timestamp: '2023-01-01T00:00:00Z',
-              description: 'Tag created'
-            }
-          ]
+          category: 'activity',
+          intent: 'malicious'
         }
       }
     };
@@ -213,7 +271,13 @@ describe('GuardianIntelClient', () => {
       const result = await client.getTagDetails('credentials:brute-force');
 
       expect(mockAxiosInstance.get).toHaveBeenCalledWith('/tags/credentials%3Abrute-force');
-      expect(result).toEqual(mockTagDetailsResponse.data);
+      expect(result).toEqual({
+        tag: 'credentials:brute-force',
+        description: 'Brute force credential attacks',
+        category: 'activity',
+        confidence: 'high',
+        intent: 'malicious'
+      });
     });
 
     it('should reject empty tag name', async () => {
@@ -237,14 +301,12 @@ describe('GuardianIntelClient', () => {
   describe('getTagIps', () => {
     const mockTagIpsResponse = {
       data: {
-        status: 'success',
-        statusCode: 200,
         result: {
           tag: 'credentials:brute-force',
           entries: ['1.2.3.4', '5.6.7.8', '9.10.11.12'],
-          lastUpdate: '2023-12-31T23:59:59Z',
           total: 1000,
-          snapshot: 'snapshot-123'
+          offset: 0,
+          limit: 1000
         }
       }
     };
@@ -260,11 +322,28 @@ describe('GuardianIntelClient', () => {
           limit: '1000'
         }
       });
-      expect(result).toEqual(mockTagIpsResponse.data);
+      expect(result).toEqual({
+        tag: 'credentials:brute-force',
+        total: 1000,
+        offset: 0,
+        limit: 1000,
+        ips: ['1.2.3.4', '5.6.7.8', '9.10.11.12']
+      });
     });
 
     it('should get tag IPs with custom parameters', async () => {
-      mockAxiosInstance.get.mockResolvedValue(mockTagIpsResponse);
+      const customMockResponse = {
+        data: {
+          result: {
+            tag: 'test-tag',
+            entries: ['1.2.3.4', '5.6.7.8', '9.10.11.12'],
+            total: 1000,
+            offset: 100,
+            limit: 500
+          }
+        }
+      };
+      mockAxiosInstance.get.mockResolvedValue(customMockResponse);
 
       const result = await client.getTagIps('test-tag', {
         offset: 100,
@@ -279,7 +358,13 @@ describe('GuardianIntelClient', () => {
           snapshot: 'test-snapshot'
         }
       });
-      expect(result).toEqual(mockTagIpsResponse.data);
+      expect(result).toEqual({
+        tag: 'test-tag',
+        total: 1000,
+        offset: 100,
+        limit: 500,
+        ips: ['1.2.3.4', '5.6.7.8', '9.10.11.12']
+      });
     });
 
     it('should reject empty tag name', async () => {

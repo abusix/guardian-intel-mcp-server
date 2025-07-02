@@ -31,9 +31,11 @@ describe('Error Handling and Edge Cases', () => {
 
   describe('Network and Connection Errors', () => {
     it('should handle connection timeout', async () => {
-      const timeoutError = new Error('timeout of 30000ms exceeded');
-      timeoutError.name = 'Error';
-      (timeoutError as any).code = 'ECONNABORTED';
+      const timeoutError = {
+        message: 'timeout of 30000ms exceeded',
+        name: 'Error',
+        code: 'ECONNABORTED'
+      } as any;
       
       mockAxiosInstance.get.mockRejectedValue(timeoutError);
 
@@ -42,8 +44,11 @@ describe('Error Handling and Edge Cases', () => {
     });
 
     it('should handle connection refused', async () => {
-      const connectionError = new Error('connect ECONNREFUSED');
-      (connectionError as any).code = 'ECONNREFUSED';
+      const connectionError = {
+        message: 'connect ECONNREFUSED',
+        name: 'Error',
+        code: 'ECONNREFUSED'
+      } as any;
       
       mockAxiosInstance.get.mockRejectedValue(connectionError);
 
@@ -52,8 +57,11 @@ describe('Error Handling and Edge Cases', () => {
     });
 
     it('should handle DNS resolution failure', async () => {
-      const dnsError = new Error('getaddrinfo ENOTFOUND');
-      (dnsError as any).code = 'ENOTFOUND';
+      const dnsError = {
+        message: 'getaddrinfo ENOTFOUND',
+        name: 'Error',
+        code: 'ENOTFOUND'
+      } as any;
       
       mockAxiosInstance.get.mockRejectedValue(dnsError);
 
@@ -62,7 +70,10 @@ describe('Error Handling and Edge Cases', () => {
     });
 
     it('should handle generic network errors', async () => {
-      const networkError = new Error('Network error');
+      const networkError = {
+        message: 'Network error',
+        name: 'Error'
+      } as any;
       
       mockAxiosInstance.get.mockRejectedValue(networkError);
 
@@ -74,8 +85,11 @@ describe('Error Handling and Edge Cases', () => {
   describe('HTTP Status Code Errors', () => {
     it('should handle 400 Bad Request', async () => {
       const axiosError = {
+        message: 'Request failed with status code 400',
+        name: 'AxiosError',
         response: {
           status: 400,
+          statusText: 'Bad Request',
           data: {
             status: 'error',
             statusCode: 400,
@@ -86,7 +100,7 @@ describe('Error Handling and Edge Cases', () => {
       
       mockAxiosInstance.get.mockRejectedValue(axiosError);
 
-      await expect(client.lookupIp('invalid-ip'))
+      await expect(client.lookupIp('192.168.1.1'))
         .rejects.toThrow('Guardian Intel API Error (400): Invalid IP address format');
     });
 
@@ -343,7 +357,8 @@ describe('Error Handling and Edge Cases', () => {
               tag: 'test-tag',
               entries: [],
               total: 0,
-              snapshot: 'test'
+              offset: 0,
+              limit: 10000
             }
           }
         });
@@ -359,7 +374,8 @@ describe('Error Handling and Edge Cases', () => {
               tag: 'test-tag',
               entries: [],
               total: 0,
-              snapshot: 'test'
+              offset: 5,
+              limit: 100
             }
           }
         });
@@ -375,11 +391,9 @@ describe('Error Handling and Edge Cases', () => {
     it('should handle API response with missing optional fields', async () => {
       const minimalResponse = {
         data: {
-          status: 'success',
-          statusCode: 200,
           result: {
-            ip: '1.2.3.4',
-            classification: 'unknown'
+            item: '1.2.3.4',
+            intent: 'unknown'
             // Missing all optional fields
           }
         }
@@ -389,26 +403,24 @@ describe('Error Handling and Edge Cases', () => {
 
       const result = await client.lookupIp('1.2.3.4');
       
-      expect(result.result.ip).toBe('1.2.3.4');
-      expect(result.result.classification).toBe('unknown');
-      expect(result.result.firstSeen).toBeUndefined();
-      expect(result.result.lastSeen).toBeUndefined();
-      expect(result.result.abuseContact).toBeUndefined();
-      expect(result.result.asn).toBeUndefined();
-      expect(result.result.blocklists).toBeUndefined();
-      expect(result.result.activities).toBeUndefined();
+      expect(result.ip).toBe('1.2.3.4');
+      expect(result.confidence).toBe('low');
+      expect(result.first_seen).toBeUndefined();
+      expect(result.last_seen).toBeUndefined();
+      expect(result.abuse_contact).toBeUndefined();
+      expect(result.asn).toBeUndefined();
+      expect(result.tags).toBeUndefined();
+      expect(result.observed_activity).toBeUndefined();
     });
 
     it('should handle empty arrays in response', async () => {
       const emptyArrayResponse = {
         data: {
-          status: 'success',
-          statusCode: 200,
           result: {
-            ip: '1.2.3.4',
-            classification: 'unknown',
-            blocklists: [],
-            activities: []
+            item: '1.2.3.4',
+            intent: 'unknown',
+            tags: [],
+            observedActivity: {}
           }
         }
       };
@@ -417,15 +429,13 @@ describe('Error Handling and Edge Cases', () => {
 
       const result = await client.lookupIp('1.2.3.4');
       
-      expect(result.result.blocklists).toEqual([]);
-      expect(result.result.activities).toEqual([]);
+      expect(result.tags).toEqual([]);
+      expect(result.observed_activity).toEqual({});
     });
 
     it('should handle tags response with empty result array', async () => {
       const emptyTagsResponse = {
         data: {
-          status: 'success',
-          statusCode: 200,
           result: []
         }
       };
@@ -434,20 +444,18 @@ describe('Error Handling and Edge Cases', () => {
 
       const result = await client.getTags();
       
-      expect(result.result).toEqual([]);
+      expect(result.tags).toEqual([]);
     });
 
     it('should handle tag IPs response with empty entries', async () => {
       const emptyIpsResponse = {
         data: {
-          status: 'success',
-          statusCode: 200,
           result: {
             tag: 'test-tag',
             entries: [],
-            lastUpdate: '2023-12-31T23:59:59Z',
             total: 0,
-            snapshot: 'empty-snapshot'
+            offset: 0,
+            limit: 1000
           }
         }
       };
@@ -456,22 +464,18 @@ describe('Error Handling and Edge Cases', () => {
 
       const result = await client.getTagIps('test-tag');
       
-      expect(result.result.entries).toEqual([]);
-      expect(result.result.total).toBe(0);
+      expect(result.ips).toEqual([]);
+      expect(result.total).toBe(0);
     });
 
     it('should handle Unicode characters in tag names', async () => {
       const unicodeResponse = {
         data: {
-          status: 'success',
-          statusCode: 200,
           result: {
             name: 'test-tag-🔒',
             intent: 'malicious',
             category: 'activity',
-            description: 'Unicode test tag',
-            references: [],
-            timeline: []
+            description: 'Unicode test tag'
           }
         }
       };
@@ -480,22 +484,18 @@ describe('Error Handling and Edge Cases', () => {
 
       const result = await client.getTagDetails('test-tag-🔒');
       
-      expect(result.result.name).toBe('test-tag-🔒');
+      expect(result.tag).toBe('test-tag-🔒');
     });
 
     it('should handle very long tag names', async () => {
       const longTagName = 'a'.repeat(1000);
       const longTagResponse = {
         data: {
-          status: 'success',
-          statusCode: 200,
           result: {
             name: longTagName,
             intent: 'malicious',
             category: 'activity',
-            description: 'Very long tag name',
-            references: [],
-            timeline: []
+            description: 'Very long tag name'
           }
         }
       };
@@ -504,7 +504,7 @@ describe('Error Handling and Edge Cases', () => {
 
       const result = await client.getTagDetails(longTagName);
       
-      expect(result.result.name).toBe(longTagName);
+      expect(result.tag).toBe(longTagName);
     });
   });
 
@@ -512,11 +512,9 @@ describe('Error Handling and Edge Cases', () => {
     it('should handle multiple concurrent requests', async () => {
       mockAxiosInstance.get.mockResolvedValue({
         data: {
-          status: 'success',
-          statusCode: 200,
           result: {
-            ip: '1.2.3.4',
-            classification: 'unknown'
+            item: '1.2.3.4',
+            intent: 'unknown'
           }
         }
       });
@@ -534,11 +532,11 @@ describe('Error Handling and Edge Cases', () => {
     it('should handle mixed success and failure in concurrent requests', async () => {
       mockAxiosInstance.get
         .mockResolvedValueOnce({
-          data: { status: 'success', statusCode: 200, result: { ip: '1.2.3.1', classification: 'unknown' } }
+          data: { result: { item: '1.2.3.1', intent: 'unknown' } }
         })
         .mockRejectedValueOnce(new Error('API Error'))
         .mockResolvedValueOnce({
-          data: { status: 'success', statusCode: 200, result: { ip: '1.2.3.3', classification: 'unknown' } }
+          data: { result: { item: '1.2.3.3', intent: 'unknown' } }
         });
 
       const promises = [

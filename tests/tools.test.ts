@@ -78,26 +78,29 @@ describe('GuardianIntelTools', () => {
   describe('executeTool', () => {
     describe('guardian_intel_lookup', () => {
       const mockLookupResponse = {
-        result: {
-          ip: '1.2.3.4',
-          classification: 'malicious',
-          firstSeen: '2023-01-01T00:00:00Z',
-          lastSeen: '2023-12-31T23:59:59Z',
-          abuseContact: 'abuse@example.com',
-          asn: {
-            number: 12345,
-            name: 'Test ASN',
-            country: 'US'
-          },
-          blocklists: ['blocklist1', 'blocklist2'],
-          activities: [
-            {
-              type: 'malware',
-              description: 'Malware distribution',
-              timestamp: '2023-06-15T12:00:00Z',
-              severity: 'high'
-            }
-          ]
+        ip: '1.2.3.4',
+        tags: ['malware', 'botnet'],
+        threat_level: 'HIGH',
+        confidence: 'high',
+        first_seen: '2023-01-01T00:00:00Z',
+        last_seen: '2023-12-31T23:59:59Z',
+        asn: {
+          asn: '12345',
+          name: 'Test ASN',
+          countryCode: 'US'
+        },
+        abuse_contact: {
+          email: 'abuse@example.com',
+          status: 'verified',
+          lastVerification: '2023-12-01T00:00:00Z'
+        },
+        observed_activity: {
+          malware: {
+            type: 'malware',
+            description: 'Malware distribution',
+            timestamp: '2023-06-15T12:00:00Z',
+            severity: 'high'
+          }
         }
       };
 
@@ -109,36 +112,33 @@ describe('GuardianIntelTools', () => {
         expect(mockClient.lookupIp).toHaveBeenCalledWith('1.2.3.4');
         expect(result).toEqual({
           ip: '1.2.3.4',
-          classification: 'malicious',
+          tags: ['malware', 'botnet'],
           threat_level: 'HIGH',
+          confidence: 'high',
           first_seen: '2023-01-01T00:00:00Z',
           last_seen: '2023-12-31T23:59:59Z',
           abuse_contact: 'abuse@example.com',
           asn: {
-            number: 12345,
+            number: '12345',
             name: 'Test ASN',
             country: 'US'
           },
-          blocklists: ['blocklist1', 'blocklist2'],
-          malicious_activities: [
-            {
+          observed_activity: {
+            malware: {
               type: 'malware',
               description: 'Malware distribution',
               timestamp: '2023-06-15T12:00:00Z',
               severity: 'high'
             }
-          ],
-          summary: expect.stringContaining('IP is classified as MALICIOUS')
+          },
+          summary: expect.stringContaining('IP threat level: HIGH')
         });
       });
 
       it('should handle suspicious classification', async () => {
         const suspiciousResponse = {
           ...mockLookupResponse,
-          result: {
-            ...mockLookupResponse.result,
-            classification: 'suspicious'
-          }
+          threat_level: 'MEDIUM'
         };
         mockClient.lookupIp.mockResolvedValue(suspiciousResponse as any);
 
@@ -150,25 +150,19 @@ describe('GuardianIntelTools', () => {
       it('should handle unknown classification', async () => {
         const unknownResponse = {
           ...mockLookupResponse,
-          result: {
-            ...mockLookupResponse.result,
-            classification: 'unknown'
-          }
+          threat_level: 'unknown'
         };
         mockClient.lookupIp.mockResolvedValue(unknownResponse as any);
 
         const result = await tools.executeTool('guardian_intel_lookup', { ip: '1.2.3.4' });
 
-        expect(result.threat_level).toBe('LOW');
+        expect(result.threat_level).toBe('unknown');
       });
 
       it('should handle response with null ASN', async () => {
         const responseWithoutAsn = {
           ...mockLookupResponse,
-          result: {
-            ...mockLookupResponse.result,
-            asn: null
-          }
+          asn: null
         };
         mockClient.lookupIp.mockResolvedValue(responseWithoutAsn as any);
 
@@ -180,7 +174,8 @@ describe('GuardianIntelTools', () => {
 
     describe('guardian_intel_tags_list', () => {
       const mockTagsResponse = {
-        result: [
+        tags: ['credentials:brute-force', 'tool:scanner', 'actor:apt29'],
+        tag_details: [
           {
             name: 'credentials:brute-force',
             intent: 'malicious',
@@ -208,7 +203,8 @@ describe('GuardianIntelTools', () => {
         expect(mockClient.getTags).toHaveBeenCalledWith(true);
         expect(result).toEqual({
           total_tags: 3,
-          tags: [
+          tags: ['credentials:brute-force', 'tool:scanner', 'actor:apt29'],
+          tag_details: [
             {
               name: 'credentials:brute-force',
               intent: 'malicious',
@@ -259,20 +255,11 @@ describe('GuardianIntelTools', () => {
 
     describe('guardian_intel_tag_details', () => {
       const mockTagDetailsResponse = {
-        result: {
-          name: 'credentials:brute-force',
-          intent: 'malicious',
-          category: 'activity',
-          description: 'Brute force credential attacks',
-          references: ['https://example.com/ref1'],
-          timeline: [
-            {
-              action: 'created',
-              timestamp: '2023-01-01T00:00:00Z',
-              description: 'Tag created'
-            }
-          ]
-        }
+        tag: 'credentials:brute-force',
+        description: 'Brute force credential attacks',
+        category: 'activity',
+        confidence: 'high',
+        intent: 'malicious'
       };
 
       it('should execute tag details successfully', async () => {
@@ -290,14 +277,7 @@ describe('GuardianIntelTools', () => {
             category: 'activity',
             description: 'Brute force credential attacks'
           },
-          references: ['https://example.com/ref1'],
-          timeline: [
-            {
-              action: 'created',
-              timestamp: '2023-01-01T00:00:00Z',
-              description: 'Tag created'
-            }
-          ],
+          confidence: 'high',
           threat_context: 'This tag represents malicious activity in the activity category. Brute force credential attacks'
         });
       });
@@ -305,13 +285,11 @@ describe('GuardianIntelTools', () => {
 
     describe('guardian_intel_tag_ips', () => {
       const mockTagIpsResponse = {
-        result: {
-          tag: 'credentials:brute-force',
-          entries: ['1.2.3.4', '5.6.7.8'],
-          lastUpdate: '2023-12-31T23:59:59Z',
-          total: 1000,
-          snapshot: 'snapshot-123'
-        }
+        tag: 'credentials:brute-force',
+        ips: ['1.2.3.4', '5.6.7.8'],
+        total: 1000,
+        offset: 0,
+        limit: 1000
       };
 
       it('should execute tag IPs successfully with default parameters', async () => {
@@ -336,14 +314,17 @@ describe('GuardianIntelTools', () => {
             limit: 1000,
             has_more: true
           },
-          last_update: '2023-12-31T23:59:59Z',
-          snapshot: 'snapshot-123',
           summary: "Found 2 IP addresses associated with tag 'credentials:brute-force'"
         });
       });
 
       it('should execute tag IPs with custom parameters', async () => {
-        mockClient.getTagIps.mockResolvedValue(mockTagIpsResponse as any);
+        const customResponse = {
+          ...mockTagIpsResponse,
+          offset: 100,
+          limit: 500
+        };
+        mockClient.getTagIps.mockResolvedValue(customResponse as any);
 
         const result = await tools.executeTool('guardian_intel_tag_ips', { 
           tagName: 'test-tag',
@@ -364,10 +345,7 @@ describe('GuardianIntelTools', () => {
       it('should calculate has_more correctly when no more results', async () => {
         const responseWithNoMore = {
           ...mockTagIpsResponse,
-          result: {
-            ...mockTagIpsResponse.result,
-            total: 2
-          }
+          total: 2
         };
         mockClient.getTagIps.mockResolvedValue(responseWithNoMore as any);
 

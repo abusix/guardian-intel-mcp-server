@@ -118,20 +118,20 @@ export class GuardianIntelTools {
     const response = await this.client.lookupIp(params.ip);
     
     return {
-      ip: response.result.ip,
-      classification: response.result.classification,
-      threat_level: this.getAggregatedThreatLevel(response.result.classification),
-      first_seen: response.result.firstSeen,
-      last_seen: response.result.lastSeen,
-      abuse_contact: response.result.abuseContact,
-      asn: response.result.asn ? {
-        number: response.result.asn.number,
-        name: response.result.asn.name,
-        country: response.result.asn.country
+      ip: response.ip,
+      tags: response.tags || [],
+      threat_level: response.threat_level || 'unknown',
+      confidence: response.confidence || 'low',
+      first_seen: response.first_seen,
+      last_seen: response.last_seen,
+      abuse_contact: response.abuse_contact?.email,
+      asn: response.asn ? {
+        number: response.asn.asn,
+        name: response.asn.name,
+        country: response.asn.countryCode
       } : null,
-      blocklists: response.result.blocklists || [],
-      malicious_activities: response.result.activities || [],
-      summary: this.generateThreatSummary(response.result)
+      observed_activity: response.observed_activity,
+      summary: this.generateThreatSummary(response)
     };
   }
 
@@ -139,15 +139,16 @@ export class GuardianIntelTools {
     const response = await this.client.getTags(params.includeDescriptions);
     
     return {
-      total_tags: response.result.length,
-      tags: response.result.map(tag => ({
+      total_tags: response.tags.length,
+      tags: response.tags,
+      tag_details: response.tag_details ? response.tag_details.map(tag => ({
         name: tag.name,
         intent: tag.intent,
         category: tag.category,
         description: tag.description || null
-      })),
-      categories: this.getCategoryStats(response.result),
-      intents: this.getIntentStats(response.result)
+      })) : [],
+      categories: response.tag_details ? this.getCategoryStats(response.tag_details) : {},
+      intents: response.tag_details ? this.getIntentStats(response.tag_details) : {}
     };
   }
 
@@ -156,18 +157,13 @@ export class GuardianIntelTools {
     
     return {
       tag: {
-        name: response.result.name,
-        intent: response.result.intent,
-        category: response.result.category,
-        description: response.result.description
+        name: response.tag,
+        intent: response.intent,
+        category: response.category,
+        description: response.description
       },
-      references: response.result.references,
-      timeline: response.result.timeline.map(entry => ({
-        action: entry.action,
-        timestamp: entry.timestamp,
-        description: entry.description
-      })),
-      threat_context: this.generateTagContext(response.result)
+      confidence: response.confidence,
+      threat_context: this.generateTagContext(response)
     };
   }
 
@@ -179,18 +175,16 @@ export class GuardianIntelTools {
     });
     
     return {
-      tag: response.result.tag,
-      ip_addresses: response.result.entries,
+      tag: response.tag,
+      ip_addresses: response.ips,
       pagination: {
-        total: response.result.total,
-        returned: response.result.entries.length,
-        offset: params.offset || 0,
-        limit: params.limit || 1000,
-        has_more: (params.offset || 0) + response.result.entries.length < response.result.total
+        total: response.total || 0,
+        returned: response.ips.length,
+        offset: response.offset || 0,
+        limit: response.limit || 1000,
+        has_more: (response.offset || 0) + response.ips.length < (response.total || 0)
       },
-      last_update: response.result.lastUpdate,
-      snapshot: response.result.snapshot,
-      summary: `Found ${response.result.entries.length} IP addresses associated with tag '${response.result.tag}'`
+      summary: `Found ${response.ips.length} IP addresses associated with tag '${response.tag}'`
     };
   }
 
@@ -208,23 +202,20 @@ export class GuardianIntelTools {
   }
 
   private generateThreatSummary(result: any): string {
-    const classification = result.classification;
-    const activities = result.activities || [];
-    const blocklists = result.blocklists || [];
+    const threatLevel = result.threat_level || 'unknown';
+    const tags = result.tags || [];
     
-    let summary = `IP is classified as ${classification.toUpperCase()}`;
+    let summary = `IP threat level: ${threatLevel.toUpperCase()}`;
     
-    if (blocklists.length > 0) {
-      summary += ` and appears on ${blocklists.length} blocklist(s)`;
+    if (tags.length > 0) {
+      summary += ` with ${tags.length} associated tag(s): ${tags.slice(0, 3).join(', ')}`;
+      if (tags.length > 3) {
+        summary += ` and ${tags.length - 3} more`;
+      }
     }
     
-    if (activities.length > 0) {
-      const activityTypes = activities.map((a: any) => a.type).join(', ');
-      summary += `. Observed activities: ${activityTypes}`;
-    }
-    
-    if (result.firstSeen) {
-      summary += `. First seen: ${result.firstSeen}`;
+    if (result.first_seen) {
+      summary += `. First seen: ${result.first_seen}`;
     }
     
     return summary;
