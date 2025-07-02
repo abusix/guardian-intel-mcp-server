@@ -1,0 +1,174 @@
+name: Version Bump
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: 'Type of version bump'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - prerelease
+        default: patch
+      prerelease_id:
+        description: 'Prerelease identifier (only for prerelease bump)'
+        required: false
+        type: string
+        default: 'beta'
+
+jobs:
+  version-bump:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+        
+    - name: Configure Git
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+    - name: Use Node.js 20.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run tests
+      run: npm test
+      
+    - name: Get current version
+      id: current
+      run: |
+        CURRENT_VERSION=$(node -p "require('./package.json').version")
+        echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+        echo "Current version: $CURRENT_VERSION"
+        
+    - name: Bump version
+      id: bump
+      run: |
+        BUMP_TYPE="${{ github.event.inputs.bump_type }}"
+        
+        if [ "$BUMP_TYPE" = "prerelease" ]; then
+          PRERELEASE_ID="${{ github.event.inputs.prerelease_id }}"
+          NEW_VERSION=$(npm version prerelease --preid="$PRERELEASE_ID" --no-git-tag-version)
+        else
+          NEW_VERSION=$(npm version "$BUMP_TYPE" --no-git-tag-version)
+        fi
+        
+        # Remove the 'v' prefix from npm version output
+        NEW_VERSION=${NEW_VERSION#v}
+        
+        echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+        echo "New version: $NEW_VERSION"
+        
+    - name: Update CHANGELOG
+      run: |
+        NEW_VERSION="${{ steps.bump.outputs.new_version }}"
+        DATE=$(date +"%Y-%m-%d")
+        
+        # Create changelog entry
+        if [ ! -f "CHANGELOG.md" ]; then
+          echo "# Changelog" > CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "All notable changes to this project will be documented in this file." >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+        fi
+        
+        # Add new version entry
+        sed -i "1a\\
+\\
+## [$NEW_VERSION] - $DATE\\
+\\
+### Added\\
+- Version bump to $NEW_VERSION\\
+\\
+### Changed\\
+- Updated package version\\
+" CHANGELOG.md
+        
+        echo "✅ Updated CHANGELOG.md"
+        
+    - name: Commit version bump
+      run: |
+        NEW_VERSION="${{ steps.bump.outputs.new_version }}"
+        
+        git add package.json package-lock.json CHANGELOG.md
+        git commit -m "chore: bump version to $NEW_VERSION
+        
+        🤖 Generated with [Claude Code](https://claude.ai/code)
+        
+        Co-Authored-By: Claude <noreply@anthropic.com>"
+        
+    - name: Create and push tag
+      run: |
+        NEW_VERSION="${{ steps.bump.outputs.new_version }}"
+        TAG_NAME="v$NEW_VERSION"
+        
+        git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
+        git push origin main
+        git push origin "$TAG_NAME"
+        
+        echo "✅ Created and pushed tag: $TAG_NAME"
+        
+    - name: Create GitHub Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ steps.bump.outputs.new_version }}
+        release_name: Release v${{ steps.bump.outputs.new_version }}
+        body: |
+          ## 🚀 Release v${{ steps.bump.outputs.new_version }}
+          
+          ### What's Changed
+          - Version bump from ${{ steps.current.outputs.version }} to ${{ steps.bump.outputs.new_version }}
+          - Bump type: **${{ github.event.inputs.bump_type }}**
+          
+          ### Installation
+          ```bash
+          # Use directly with NPX (after publishing)
+          npx @abusix/guardian-intel-mcp-server
+          
+          # Or install globally
+          npm install -g @abusix/guardian-intel-mcp-server@${{ steps.bump.outputs.new_version }}
+          ```
+          
+          ### Usage
+          ```bash
+          # Set your API key
+          export ABUSIX_API_KEY=your-api-key-here
+          
+          # Run the MCP server
+          npx @abusix/guardian-intel-mcp-server
+          ```
+          
+          🤖 Generated with [Claude Code](https://claude.ai/code)
+        draft: false
+        prerelease: ${{ github.event.inputs.bump_type == 'prerelease' }}
+        
+    - name: Summary
+      run: |
+        echo "## 📋 Version Bump Summary" >> $GITHUB_STEP_SUMMARY
+        echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+        echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Previous Version | ${{ steps.current.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| New Version | ${{ steps.bump.outputs.new_version }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Bump Type | ${{ github.event.inputs.bump_type }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Tag Created | v${{ steps.bump.outputs.new_version }} |" >> $GITHUB_STEP_SUMMARY
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📦 Next Steps" >> $GITHUB_STEP_SUMMARY
+        echo "1. The GitHub release will trigger the publish workflow" >> $GITHUB_STEP_SUMMARY
+        echo "2. Package will be automatically published to NPM" >> $GITHUB_STEP_SUMMARY
+        echo "3. Users can install with: \`npx @abusix/guardian-intel-mcp-server@${{ steps.bump.outputs.new_version }}\`" >> $GITHUB_STEP_SUMMARY
