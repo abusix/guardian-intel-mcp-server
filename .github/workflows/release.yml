@@ -1,0 +1,96 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Use Node.js 20.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run tests
+      run: npm run test:coverage
+      
+    - name: Run linting
+      run: npm run lint
+      
+    - name: Build project
+      run: npm run build
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Use Node.js 20.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+        cache: 'npm'
+        registry-url: 'https://registry.npmjs.org'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Build project
+      run: npm run build
+      
+    - name: Publish to NPM
+      run: npm publish
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  create-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Extract version from tag
+      id: version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      
+    - name: Create GitHub Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release v${{ steps.version.outputs.VERSION }}
+        body: |
+          ## Guardian Intel MCP Server v${{ steps.version.outputs.VERSION }}
+          
+          ### Installation
+          ```bash
+          npx @abusix/guardian-intel-mcp-server
+          ```
+          
+          ### What's Changed
+          - See [CHANGELOG.md](https://github.com/abusix/guardian-intel-mcp-server/blob/main/CHANGELOG.md) for details
+          
+          ### Documentation
+          - [README.md](https://github.com/abusix/guardian-intel-mcp-server/blob/main/README.md)
+          - [Guardian Intel API Docs](https://docs.abusix.com/docs/guardian-intel/)
+          
+          **Full Changelog**: https://github.com/abusix/guardian-intel-mcp-server/compare/v${{ steps.version.outputs.VERSION }}...HEAD
+        draft: false
+        prerelease: false
