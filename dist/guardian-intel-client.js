@@ -26,10 +26,10 @@ export class GuardianIntelClient {
         if (error.response?.data) {
             const apiError = error.response.data;
             // Try to extract error message from various possible response formats
-            const errorMessage = apiError.message ||
-                apiError.error ||
-                apiError.detail ||
-                apiError.description ||
+            const errorMessage = (typeof apiError.message === 'string' ? apiError.message : '') ||
+                (typeof apiError.error === 'string' ? apiError.error : '') ||
+                (typeof apiError.detail === 'string' ? apiError.detail : '') ||
+                (typeof apiError.description === 'string' ? apiError.description : '') ||
                 statusText ||
                 'Unknown API error';
             const errorCode = apiError.statusCode || apiError.code || status || 'Unknown';

@@ -19,7 +19,7 @@ export interface LookupResponse {
         status: string;
         lastVerification: string;
     };
-    observed_activity?: any;
+    observed_activity?: Record<string, unknown>;
 }
 export interface MaliciousActivity {
     type: string;

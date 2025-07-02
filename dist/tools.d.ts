@@ -4,7 +4,7 @@ export declare class GuardianIntelTools {
     private client;
     constructor(client: GuardianIntelClient);
     getToolDefinitions(): Tool[];
-    executeTool(name: string, args: any): Promise<any>;
+    executeTool(name: string, args: Record<string, unknown>): Promise<Record<string, unknown>>;
     private lookupIp;
     private getTagsList;
     private getTagDetails;

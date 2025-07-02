@@ -99,7 +99,7 @@ export class GuardianIntelTools {
             }
         }
         catch (error) {
-            throw new Error(`Tool execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            throw new Error(`Tool execution failed: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
     async lookupIp(params) {
@@ -198,14 +198,16 @@ export class GuardianIntelTools {
     getCategoryStats(tags) {
         const stats = {};
         tags.forEach(tag => {
-            stats[tag.category] = (stats[tag.category] || 0) + 1;
+            const category = tag.category || 'unknown';
+            stats[category] = (stats[category] || 0) + 1;
         });
         return stats;
     }
     getIntentStats(tags) {
         const stats = {};
         tags.forEach(tag => {
-            stats[tag.intent] = (stats[tag.intent] || 0) + 1;
+            const intent = tag.intent || 'unknown';
+            stats[intent] = (stats[intent] || 0) + 1;
         });
         return stats;
     }

@@ -91,26 +91,26 @@ export class GuardianIntelTools {
     ];
   }
 
-  async executeTool(name: string, args: any): Promise<any> {
+  async executeTool(name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
     try {
       switch (name) {
         case 'guardian_intel_lookup':
-          return await this.lookupIp(args as LookupToolParams);
+          return await this.lookupIp(args as unknown as LookupToolParams);
         
         case 'guardian_intel_tags_list':
-          return await this.getTagsList(args as TagsListToolParams);
+          return await this.getTagsList(args as unknown as TagsListToolParams);
         
         case 'guardian_intel_tag_details':
-          return await this.getTagDetails(args as TagDetailsToolParams);
+          return await this.getTagDetails(args as unknown as TagDetailsToolParams);
         
         case 'guardian_intel_tag_ips':
-          return await this.getTagIps(args as TagIpsToolParams);
+          return await this.getTagIps(args as unknown as TagIpsToolParams);
         
         default:
           throw new Error(`Unknown tool: ${name}`);
       }
     } catch (error) {
-      throw new Error(`Tool execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(`Tool execution failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -201,7 +201,7 @@ export class GuardianIntelTools {
     }
   }
 
-  private generateThreatSummary(result: any): string {
+  private generateThreatSummary(result: { threat_level?: string; tags?: string[]; first_seen?: string }): string {
     const threatLevel = result.threat_level || 'unknown';
     const tags = result.tags || [];
     
@@ -221,23 +221,25 @@ export class GuardianIntelTools {
     return summary;
   }
 
-  private getCategoryStats(tags: any[]): Record<string, number> {
+  private getCategoryStats(tags: { category?: string }[]): Record<string, number> {
     const stats: Record<string, number> = {};
     tags.forEach(tag => {
-      stats[tag.category] = (stats[tag.category] || 0) + 1;
+      const category = tag.category || 'unknown';
+      stats[category] = (stats[category] || 0) + 1;
     });
     return stats;
   }
 
-  private getIntentStats(tags: any[]): Record<string, number> {
+  private getIntentStats(tags: { intent?: string }[]): Record<string, number> {
     const stats: Record<string, number> = {};
     tags.forEach(tag => {
-      stats[tag.intent] = (stats[tag.intent] || 0) + 1;
+      const intent = tag.intent || 'unknown';
+      stats[intent] = (stats[intent] || 0) + 1;
     });
     return stats;
   }
 
-  private generateTagContext(tagDetails: any): string {
+  private generateTagContext(tagDetails: { intent?: string; category?: string; description?: string }): string {
     const { intent, category, description } = tagDetails;
     
     let context = `This tag represents ${intent} activity in the ${category} category`;

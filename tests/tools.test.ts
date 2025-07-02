@@ -338,8 +338,8 @@ describe('GuardianIntelTools', () => {
           limit: 500,
           snapshot: 'test-snapshot'
         });
-        expect(result.pagination.offset).toBe(100);
-        expect(result.pagination.limit).toBe(500);
+        expect((result.pagination as any).offset).toBe(100);
+        expect((result.pagination as any).limit).toBe(500);
       });
 
       it('should calculate has_more correctly when no more results', async () => {
@@ -354,7 +354,7 @@ describe('GuardianIntelTools', () => {
           offset: 0
         });
 
-        expect(result.pagination.has_more).toBe(false);
+        expect((result.pagination as any).has_more).toBe(false);
       });
     });
 

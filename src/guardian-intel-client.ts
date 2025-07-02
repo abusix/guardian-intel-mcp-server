@@ -4,8 +4,7 @@ import {
   LookupResponse,
   TagsListResponse,
   TagDetailsResponse,
-  TagIpsResponse,
-  ApiError
+  TagIpsResponse
 } from './types.js';
 
 export class GuardianIntelClient {
@@ -42,14 +41,14 @@ export class GuardianIntelClient {
     const statusText = error.response?.statusText;
     
     if (error.response?.data) {
-      const apiError = error.response.data as any;
+      const apiError = error.response.data as Record<string, unknown>;
       
       // Try to extract error message from various possible response formats
       const errorMessage = 
-        apiError.message || 
-        apiError.error || 
-        apiError.detail || 
-        apiError.description ||
+        (typeof apiError.message === 'string' ? apiError.message : '') || 
+        (typeof apiError.error === 'string' ? apiError.error : '') || 
+        (typeof apiError.detail === 'string' ? apiError.detail : '') || 
+        (typeof apiError.description === 'string' ? apiError.description : '') ||
         statusText ||
         'Unknown API error';
         
@@ -129,7 +128,7 @@ export class GuardianIntelClient {
       // Extract the result from the API wrapper
       if (response.data?.result && Array.isArray(response.data.result)) {
         return {
-          tags: response.data.result.map((tag: any) => tag.name),
+          tags: response.data.result.map((tag: { name: string }) => tag.name),
           tag_details: includeDescriptions ? response.data.result : undefined
         };
       }
