@@ -1,4 +1,5 @@
 name: Version Bump
+# Workflow for automated version bumping and release creation
 
 on:
   workflow_dispatch:
