@@ -1,0 +1,175 @@
+name: Dependency Update
+
+on:
+  schedule:
+    # Run weekly on Mondays at 10 AM UTC
+    - cron: '0 10 * * 1'
+  workflow_dispatch:
+
+jobs:
+  update-dependencies:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Use Node.js 20.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+        cache: 'npm'
+        
+    - name: Configure git
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Check for outdated dependencies
+      id: outdated
+      run: |
+        echo "Checking for outdated dependencies..."
+        npm outdated --json > outdated.json || true
+        
+        if [ -s outdated.json ]; then
+          echo "has_updates=true" >> $GITHUB_OUTPUT
+          echo "Found outdated dependencies:"
+          cat outdated.json
+        else
+          echo "has_updates=false" >> $GITHUB_OUTPUT
+          echo "All dependencies are up to date"
+        fi
+        
+    - name: Update patch and minor versions
+      if: steps.outdated.outputs.has_updates == 'true'
+      run: |
+        echo "Updating patch and minor versions..."
+        npm update --save
+        npm update --save-dev
+        
+    - name: Run tests after update
+      if: steps.outdated.outputs.has_updates == 'true'
+      run: |
+        npm test || {
+          echo "Tests failed after dependency update"
+          git checkout -- package.json package-lock.json
+          exit 1
+        }
+        
+    - name: Run build after update
+      if: steps.outdated.outputs.has_updates == 'true'
+      run: |
+        npm run build || {
+          echo "Build failed after dependency update"
+          git checkout -- package.json package-lock.json
+          exit 1
+        }
+        
+    - name: Run security audit
+      if: steps.outdated.outputs.has_updates == 'true'
+      run: |
+        npm audit --audit-level=moderate || {
+          echo "Security audit failed after dependency update"
+          git checkout -- package.json package-lock.json
+          exit 1
+        }
+        
+    - name: Check for changes
+      if: steps.outdated.outputs.has_updates == 'true'
+      id: changes
+      run: |
+        if git diff --quiet HEAD -- package.json package-lock.json; then
+          echo "has_changes=false" >> $GITHUB_OUTPUT
+        else
+          echo "has_changes=true" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Create Pull Request
+      if: steps.outdated.outputs.has_updates == 'true' && steps.changes.outputs.has_changes == 'true'
+      uses: peter-evans/create-pull-request@v5
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        branch: dependency-updates
+        title: 'chore: Update dependencies'
+        body: |
+          ## Automated Dependency Update
+          
+          This PR updates patch and minor versions of dependencies to their latest versions.
+          
+          ### Changes
+          - ✅ Updated npm dependencies
+          - ✅ Tests passing
+          - ✅ Build successful
+          - ✅ Security audit clean
+          
+          ### Validation
+          All tests, builds, and security audits have passed with the updated dependencies.
+          
+          ---
+          *This PR was automatically created by GitHub Actions*
+        commit-message: 'chore: update dependencies to latest patch/minor versions'
+        delete-branch: true
+        
+    - name: Auto-merge if tests pass
+      if: steps.outdated.outputs.has_updates == 'true' && steps.changes.outputs.has_changes == 'true'
+      uses: pascalgn/merge-action@v0.15.6
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        merge_method: squash
+        merge_commit_message: "chore: update dependencies to latest versions"
+
+  check-major-updates:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Use Node.js 20.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Check for major version updates
+      run: |
+        echo "Checking for major version updates..."
+        npx npm-check-updates --target major --errorLevel 0 || true
+        
+        echo "Major updates require manual review and testing."
+        echo "Consider creating a separate PR for major version updates."
+        
+    - name: Create issue for major updates
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { execSync } = require('child_process');
+          
+          try {
+            const output = execSync('npx npm-check-updates --target major --jsonUpgraded', { encoding: 'utf8' });
+            const updates = JSON.parse(output);
+            
+            if (Object.keys(updates).length > 0) {
+              const updatesList = Object.entries(updates)
+                .map(([pkg, version]) => `- ${pkg}: ${version}`)
+                .join('\n');
+                
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: 'Major dependency updates available',
+                body: `## Major Dependency Updates Available\n\nThe following packages have major version updates available:\n\n${updatesList}\n\n### Action Required\nThese updates require manual review and testing as they may contain breaking changes.\n\n### Next Steps\n1. Review changelogs for each package\n2. Test updates in a separate branch\n3. Update code if needed for breaking changes\n4. Create PR with major updates\n\n---\n*This issue was automatically created by GitHub Actions*`,
+                labels: ['dependencies', 'enhancement']
+              });
+            }
+          } catch (error) {
+            console.log('No major updates found or error occurred:', error.message);
+          }

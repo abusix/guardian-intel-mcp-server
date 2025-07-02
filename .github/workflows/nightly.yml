@@ -1,0 +1,142 @@
+name: Nightly Build
+
+on:
+  schedule:
+    # Run every night at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  nightly-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Use Node.js 20.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run full test suite
+      run: npm run test:coverage
+      
+    - name: Run linting
+      run: npm run lint
+      
+    - name: Build project
+      run: npm run build
+      
+    - name: Test package creation
+      run: npm pack
+      
+    - name: Test global installation
+      run: |
+        npm install -g ./abusix-guardian-intel-mcp-server-*.tgz
+        which guardian-intel-mcp-server
+        
+    - name: Test CLI functionality
+      run: |
+        # Test help commands
+        guardian-intel-mcp-server --help
+        guardian-intel-mcp-server --help-usage
+        
+        # Test error handling (should fail gracefully without API key)
+        guardian-intel-mcp-server --debug || echo "Expected failure without API key"
+        
+    - name: Security audit
+      run: npm audit --audit-level=moderate
+      
+    - name: Check for outdated dependencies
+      run: npm outdated || true
+      
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: nightly-test-results
+        path: |
+          coverage/
+          *.tgz
+          
+    - name: Create nightly build
+      if: success()
+      run: |
+        # Create nightly version
+        NIGHTLY_VERSION=$(date +"%Y%m%d")-nightly
+        npm version 1.0.0-${NIGHTLY_VERSION} --no-git-tag-version
+        
+        # Package for nightly distribution
+        npm pack
+        
+    - name: Upload nightly build
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: nightly-build-$(date +"%Y%m%d")
+        path: "*.tgz"
+        retention-days: 7
+
+  integration-test:
+    runs-on: ubuntu-latest
+    needs: nightly-test
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x, 22.x]
+        
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Build project
+      run: npm run build
+      
+    - name: Test NPX installation
+      run: |
+        # Test that NPX can find and execute our package
+        npm pack
+        npm install -g ./abusix-guardian-intel-mcp-server-*.tgz
+        
+        # Test NPX execution
+        npx @abusix/guardian-intel-mcp-server --help
+        
+    - name: Test in different directories
+      run: |
+        # Test NPX from different working directories
+        cd /tmp
+        npx @abusix/guardian-intel-mcp-server --help-usage
+        
+        cd ~
+        npx @abusix/guardian-intel-mcp-server --version
+
+  notify-results:
+    runs-on: ubuntu-latest
+    needs: [nightly-test, integration-test]
+    if: always()
+    
+    steps:
+    - name: Report nightly build status
+      run: |
+        if [ "${{ needs.nightly-test.result }}" == "success" ] && [ "${{ needs.integration-test.result }}" == "success" ]; then
+          echo "✅ Nightly build passed successfully"
+          echo "All tests passed across Node.js versions 18, 20, and 22"
+        else
+          echo "❌ Nightly build failed"
+          echo "nightly-test: ${{ needs.nightly-test.result }}"
+          echo "integration-test: ${{ needs.integration-test.result }}"
+        fi

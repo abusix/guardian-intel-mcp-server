@@ -1,0 +1,167 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+      version:
+        description: 'Version to deploy (leave empty for latest)'
+        required: false
+        type: string
+
+jobs:
+  deploy-staging:
+    if: ${{ inputs.environment == 'staging' }}
+    runs-on: ubuntu-latest
+    environment: staging
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Use Node.js 20.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+        cache: 'npm'
+        registry-url: 'https://registry.npmjs.org'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run tests
+      run: npm test
+      
+    - name: Build project
+      run: npm run build
+      
+    - name: Deploy to staging NPM with beta tag
+      run: |
+        # Update version with beta suffix if not provided
+        if [ -z "${{ inputs.version }}" ]; then
+          npm version prerelease --preid=beta --no-git-tag-version
+        else
+          npm version ${{ inputs.version }}-beta --no-git-tag-version
+        fi
+        
+        # Publish with beta tag
+        npm publish --tag beta
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        
+    - name: Test staging deployment
+      run: |
+        echo "Testing beta package installation..."
+        npx @abusix/guardian-intel-mcp-server@beta --help || true
+        
+    - name: Notify deployment
+      run: |
+        echo "🚀 Staging deployment completed!"
+        echo "Install with: npx @abusix/guardian-intel-mcp-server@beta"
+
+  deploy-production:
+    if: ${{ inputs.environment == 'production' }}
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Use Node.js 20.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+        cache: 'npm'
+        registry-url: 'https://registry.npmjs.org'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run full test suite
+      run: npm run test:coverage
+      
+    - name: Run linting
+      run: npm run lint
+      
+    - name: Run security audit
+      run: npm audit --audit-level=moderate
+      
+    - name: Build project
+      run: npm run build
+      
+    - name: Create production release
+      run: |
+        # Set version if provided, otherwise use current
+        if [ -n "${{ inputs.version }}" ]; then
+          npm version ${{ inputs.version }} --no-git-tag-version
+        fi
+        
+        # Create git tag for release
+        VERSION=$(node -p "require('./package.json').version")
+        git config user.name "github-actions"
+        git config user.email "github-actions@github.com"
+        git tag -a "v${VERSION}" -m "Release v${VERSION}"
+        git push origin "v${VERSION}"
+        
+    - name: Publish to NPM production
+      run: npm publish
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        
+    - name: Test production deployment
+      run: |
+        echo "Testing production package installation..."
+        sleep 30 # Wait for NPM propagation
+        npx @abusix/guardian-intel-mcp-server --help
+        
+    - name: Create GitHub Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ steps.get-version.outputs.version }}
+        release_name: Production Release v${{ steps.get-version.outputs.version }}
+        body: |
+          ## Guardian Intel MCP Server v${{ steps.get-version.outputs.version }}
+          
+          🎉 **Production Release**
+          
+          ### Installation
+          ```bash
+          npx @abusix/guardian-intel-mcp-server
+          ```
+          
+          ### Quick Start
+          ```bash
+          export ABUSIX_API_KEY="your-api-key"
+          npx @abusix/guardian-intel-mcp-server
+          ```
+          
+          ### Features
+          - ✅ Complete Guardian Intel API integration
+          - ✅ 4 MCP tools for threat intelligence
+          - ✅ NPX-ready for instant usage
+          - ✅ Comprehensive error handling
+          - ✅ Production-tested and validated
+          
+          ### Documentation
+          - [README.md](https://github.com/abusix/guardian-intel-mcp-server/blob/main/README.md)
+          - [Guardian Intel API Docs](https://docs.abusix.com/docs/guardian-intel/)
+          
+          ---
+          *Deployed via GitHub Actions*
+        draft: false
+        prerelease: false
+        
+    - name: Notify successful deployment
+      run: |
+        echo "🎉 Production deployment completed successfully!"
+        echo "Package available at: https://www.npmjs.com/package/@abusix/guardian-intel-mcp-server"

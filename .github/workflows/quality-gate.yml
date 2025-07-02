@@ -1,0 +1,302 @@
+name: Quality Gate
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  code-quality:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Needed for SonarCloud
+        
+    - name: Use Node.js 20.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run linting with detailed output
+      run: |
+        echo "Running ESLint..."
+        npm run lint -- --format=json --output-file=eslint-report.json || true
+        npm run lint
+        
+    - name: Run tests with coverage
+      run: npm run test:coverage
+      
+    - name: Check test coverage thresholds
+      run: |
+        echo "Checking coverage thresholds..."
+        node -e "
+          const coverage = require('./coverage/coverage-summary.json').total;
+          const thresholds = { lines: 60, branches: 60, functions: 60, statements: 60 };
+          
+          let failed = false;
+          for (const [metric, threshold] of Object.entries(thresholds)) {
+            const actual = coverage[metric].pct;
+            console.log(\`\${metric}: \${actual}% (threshold: \${threshold}%)\`);
+            if (actual < threshold) {
+              console.error(\`❌ \${metric} coverage \${actual}% is below threshold \${threshold}%\`);
+              failed = true;
+            } else {
+              console.log(\`✅ \${metric} coverage \${actual}% meets threshold \${threshold}%\`);
+            }
+          }
+          
+          if (failed) {
+            process.exit(1);
+          }
+          console.log('✅ All coverage thresholds met');
+        "
+        
+    - name: Build project
+      run: npm run build
+      
+    - name: Check bundle size
+      run: |
+        echo "Checking bundle sizes..."
+        ls -la dist/
+        
+        # Check if any JS files are suspiciously large
+        find dist/ -name "*.js" -size +500k -exec echo "⚠️  Large file detected: {} ($(stat -f%z {} 2>/dev/null || stat -c%s {} 2>/dev/null) bytes)" \;
+        
+    - name: Verify CLI functionality
+      run: |
+        echo "Testing CLI functionality..."
+        node dist/cli.js --help
+        node dist/cli.js --help-usage
+        
+        # Test that CLI fails gracefully without API key
+        if node dist/cli.js 2>&1 | grep -q "ABUSIX_API_KEY.*required"; then
+          echo "✅ CLI properly requires API key"
+        else
+          echo "❌ CLI should require API key"
+          exit 1
+        fi
+        
+    - name: Check for TODO/FIXME comments
+      run: |
+        echo "Checking for TODO/FIXME comments..."
+        if grep -r "TODO\|FIXME" src/ tests/ --include="*.ts" --include="*.js"; then
+          echo "⚠️  Found TODO/FIXME comments (review recommended)"
+        else
+          echo "✅ No TODO/FIXME comments found"
+        fi
+        
+    - name: Check TypeScript strict mode
+      run: |
+        echo "Verifying TypeScript strict mode..."
+        if grep -q '"strict": true' tsconfig.json; then
+          echo "✅ TypeScript strict mode enabled"
+        else
+          echo "❌ TypeScript strict mode should be enabled"
+          exit 1
+        fi
+        
+    - name: Upload coverage to CodeClimate
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: paambaati/codeclimate-action@v5
+      env:
+        CC_TEST_REPORTER_ID: ${{ secrets.CC_TEST_REPORTER_ID }}
+      with:
+        coverageLocations: ${{github.workspace}}/coverage/lcov.info:lcov
+        
+    - name: Upload artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: quality-reports
+        path: |
+          coverage/
+          eslint-report.json
+
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Use Node.js 20.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run npm audit
+      run: |
+        echo "Running npm security audit..."
+        npm audit --audit-level=moderate --json > npm-audit.json || true
+        npm audit --audit-level=moderate
+        
+    - name: Run Snyk security scan
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: snyk/actions/node@master
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        args: --severity-threshold=medium
+        
+    - name: Check for sensitive files
+      run: |
+        echo "Checking for sensitive files..."
+        
+        # Check for common sensitive file patterns
+        sensitive_patterns=(
+          "*.key"
+          "*.pem"
+          "*.p12"
+          "*.pfx"
+          ".env*"
+          "secrets.*"
+          "credentials.*"
+        )
+        
+        found_sensitive=false
+        for pattern in "${sensitive_patterns[@]}"; do
+          if find . -name "$pattern" -not -path "./node_modules/*" | grep -q .; then
+            echo "⚠️  Found potentially sensitive files matching: $pattern"
+            find . -name "$pattern" -not -path "./node_modules/*"
+            found_sensitive=true
+          fi
+        done
+        
+        if [ "$found_sensitive" = false ]; then
+          echo "✅ No sensitive files detected"
+        fi
+        
+    - name: Check for hardcoded secrets
+      run: |
+        echo "Scanning for hardcoded secrets..."
+        
+        # Basic patterns for common secrets
+        if grep -r -i "password\s*=\|api.key\s*=\|secret\s*=\|token\s*=" src/ tests/ --include="*.ts" --include="*.js" | grep -v "process.env\|secrets\.\|config\." | head -10; then
+          echo "⚠️  Potential hardcoded secrets found (review required)"
+        else
+          echo "✅ No obvious hardcoded secrets detected"
+        fi
+
+  performance-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Use Node.js 20.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Build project
+      run: npm run build
+      
+    - name: Measure build time
+      run: |
+        echo "Measuring build performance..."
+        time npm run build
+        
+    - name: Measure test execution time
+      run: |
+        echo "Measuring test performance..."
+        time npm test
+        
+    - name: Check startup time
+      run: |
+        echo "Measuring CLI startup time..."
+        time node dist/cli.js --help > /dev/null
+        
+    - name: Package size analysis
+      run: |
+        echo "Analyzing package size..."
+        npm pack
+        
+        PACKAGE_SIZE=$(stat -f%z *.tgz 2>/dev/null || stat -c%s *.tgz 2>/dev/null)
+        echo "Package size: $PACKAGE_SIZE bytes"
+        
+        # Alert if package is larger than 10MB
+        if [ "$PACKAGE_SIZE" -gt 10485760 ]; then
+          echo "⚠️  Package size is quite large (>10MB)"
+        else
+          echo "✅ Package size is reasonable"
+        fi
+
+  compatibility-check:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node-version: [18.x, 20.x, 22.x]
+        
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Build project
+      run: npm run build
+      
+    - name: Test CLI on ${{ matrix.os }}
+      run: |
+        node dist/cli.js --help
+        node dist/cli.js --help-usage
+        
+    - name: Test NPX installation
+      run: |
+        npm pack
+        npm install -g ./abusix-guardian-intel-mcp-server-*.tgz
+        
+        # Test global installation
+        which guardian-intel-mcp-server || where guardian-intel-mcp-server
+        
+  quality-gate-summary:
+    runs-on: ubuntu-latest
+    needs: [code-quality, security-scan, performance-check, compatibility-check]
+    if: always()
+    
+    steps:
+    - name: Quality Gate Summary
+      run: |
+        echo "## 🚦 Quality Gate Summary"
+        echo "| Check | Status |"
+        echo "|-------|--------|"
+        echo "| Code Quality | ${{ needs.code-quality.result == 'success' && '✅ Passed' || '❌ Failed' }} |"
+        echo "| Security Scan | ${{ needs.security-scan.result == 'success' && '✅ Passed' || '❌ Failed' }} |"
+        echo "| Performance | ${{ needs.performance-check.result == 'success' && '✅ Passed' || '❌ Failed' }} |"
+        echo "| Compatibility | ${{ needs.compatibility-check.result == 'success' && '✅ Passed' || '❌ Failed' }} |"
+        
+        if [ "${{ needs.code-quality.result }}" == "success" ] && \
+           [ "${{ needs.security-scan.result }}" == "success" ] && \
+           [ "${{ needs.performance-check.result }}" == "success" ] && \
+           [ "${{ needs.compatibility-check.result }}" == "success" ]; then
+          echo "🎉 All quality gates passed!"
+          exit 0
+        else
+          echo "❌ One or more quality gates failed"
+          exit 1
+        fi
