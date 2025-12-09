@@ -35,8 +35,8 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^0.5.0",
-    "axios": "^1.6.0",
+    "@modelcontextprotocol/sdk": "^1.24.0",
+    "axios": "^1.12.0",
     "commander": "^12.0.0",
     "dotenv": "^17.0.1"
   },
@@ -58,5 +58,9 @@
   "bugs": {
     "url": "https://github.com/abusix/guardian-intel-mcp-server/issues"
   },
-  "homepage": "https://github.com/abusix/guardian-intel-mcp-server#readme"
+  "homepage": "https://github.com/abusix/guardian-intel-mcp-server#readme",
+  "overrides": {
+    "js-yaml@^3": "3.14.2",
+    "js-yaml@^4": "^4.1.1"
+  }
 }
