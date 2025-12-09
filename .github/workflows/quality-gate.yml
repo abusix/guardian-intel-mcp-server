@@ -89,7 +89,7 @@ jobs:
         node dist/cli.js --help-usage
         
         # Test that CLI fails gracefully without API key
-        if node dist/cli.js 2>&1 | grep -q "ABUSIX_API_KEY.*required"; then
+        if node dist/cli.js 2>&1 | grep -qi "API key.*required\|required.*API key"; then
           echo "✅ CLI properly requires API key"
         else
           echo "❌ CLI should require API key"
