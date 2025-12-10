@@ -18,6 +18,7 @@ export default {
     'src/**/*.ts',
     '!src/**/*.d.ts'
   ],
+  coverageReporters: ['text', 'lcov', 'json-summary'],
   setupFilesAfterEnv: ['<rootDir>/tests/setup.ts'],
   testTimeout: 10000,
   // Ignore some complex tests for now
